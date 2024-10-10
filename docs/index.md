@@ -8,7 +8,7 @@ hero:
   actions:
     - theme: brand
       text: Docs
-      link: /markdown-examples
+      link: /info
   image:
     src: /logo-large.jpg
     alt: VitePress
