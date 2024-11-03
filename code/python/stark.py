@@ -71,22 +71,22 @@ class Stark:
         return [self.field.sample(blake2b(randomness + bytes(i)).digest()) for i in range(0, number)]
 
     def prove( self, trace, transition_constraints, boundary, proof_stream=None ):
-        # create proof stream object if necessary
+        # tạo đối tượng proof stream nếu cần thiết
         if proof_stream == None:
             proof_stream = ProofStream()
         
-        # concatenate randomizers
+        # nối thêm các randomizer
         for k in range(self.num_randomizers):
             trace = trace + [[self.field.sample(os.urandom(17)) for s in range(self.num_registers)]]
 
-        # interpolate
+        # nội suy
         trace_domain = [self.omicron^i for i in range(len(trace))]
         trace_polynomials = []
         for s in range(self.num_registers):
             single_trace = [trace[c][s] for c in range(len(trace))]
             trace_polynomials = trace_polynomials + [Polynomial.interpolate_domain(trace_domain, single_trace)]
 
-        # subtract boundary interpolants and divide out boundary zerofiers
+        # trừ đi các nội suy biên và chia cho các zerofier biên
         boundary_quotients = []
         for s in range(self.num_registers):
             interpolant = self.boundary_interpolants(boundary)[s]
@@ -94,7 +94,7 @@ class Stark:
             quotient = (trace_polynomials[s] - interpolant) / zerofier
             boundary_quotients += [quotient]
 
-        # commit to boundary quotients
+        # cam kết với các thương số biên
         fri_domain = self.fri.eval_domain()
         boundary_quotient_codewords = []
         boundary_quotient_Merkle_roots = []
@@ -103,28 +103,28 @@ class Stark:
             merkle_root = Merkle.commit(boundary_quotient_codewords[s])
             proof_stream.push(merkle_root)
 
-        # symbolically evaluate transition constraints
+        # đánh giá ràng buộc chuyển tiếp một cách tượng trưng
         point = [Polynomial([self.field.zero(), self.field.one()])] + trace_polynomials + [tp.scale(self.omicron) for tp in trace_polynomials]
         transition_polynomials = [a.evaluate_symbolic(point) for a in transition_constraints]
 
-        # divide out zerofier
+        # chia cho zerofier
         transition_quotients = [tp / self.transition_zerofier() for tp in transition_polynomials]
 
-        # commit to randomizer polynomial
+        # cam kết với đa thức randomizer
         randomizer_polynomial = Polynomial([self.field.sample(os.urandom(17)) for i in range(self.max_degree(transition_constraints)+1)])
         randomizer_codeword = randomizer_polynomial.evaluate_domain(fri_domain) 
         randomizer_root = Merkle.commit(randomizer_codeword)
         proof_stream.push(randomizer_root)
 
-        # get weights for nonlinear combination
+        # lấy trọng số cho kết hợp phi tuyến
         #  - 1 randomizer
-        #  - 2 for every transition quotient
-        #  - 2 for every boundary quotient
+        #  - 2 cho mỗi thương số chuyển tiếp
+        #  - 2 cho mỗi thương số biên
         weights = self.sample_weights(1 + 2*len(transition_quotients) + 2*len(boundary_quotients), proof_stream.prover_fiat_shamir())
 
-        assert([tq.degree() for tq in transition_quotients] == self.transition_quotient_degree_bounds(transition_constraints)), "transition quotient degrees do not match with expectation"
+        assert([tq.degree() for tq in transition_quotients] == self.transition_quotient_degree_bounds(transition_constraints)), "bậc của thương số chuyển tiếp không khớp với kỳ vọng"
 
-        # compute terms of nonlinear combination polynomial
+        # tính toán các số hạng của đa thức kết hợp phi tuyến
         x = Polynomial([self.field.zero(), self.field.one()])
         max_degree = self.max_degree(transition_constraints)
         terms = []
@@ -138,61 +138,61 @@ class Stark:
             shift = max_degree - self.boundary_quotient_degree_bounds(len(trace), boundary)[i]
             terms += [(x^shift) * boundary_quotients[i]]
 
-        # take weighted sum
+        # lấy tổng có trọng số
         # combination = sum(weights[i] * terms[i] for all i)
         combination = reduce(lambda a, b : a+b, [Polynomial([weights[i]]) * terms[i] for i in range(len(terms))], Polynomial([]))
 
-        # compute matching codeword
+        # tính toán codeword phù hợp
         combined_codeword = combination.evaluate_domain(fri_domain)
 
-        # prove low degree of combination polynomial, and collect indices
+        # chứng minh bậc thấp của đa thức kết hợp và thu thập các chỉ số
         indices = self.fri.prove(combined_codeword, proof_stream)
 
-        # process indices
+        # xử lý các chỉ số
         duplicated_indices = [i for i in indices] + [(i + self.expansion_factor) % self.fri.domain_length for i in indices]
         quadrupled_indices = [i for i in duplicated_indices] + [(i + (self.fri.domain_length // 2)) % self.fri.domain_length for i in duplicated_indices]
         quadrupled_indices.sort()
 
-        # open indicated positions in the boundary quotient codewords
+        # mở các vị trí được chỉ định trong các codeword thương số biên
         for bqc in boundary_quotient_codewords:
             for i in quadrupled_indices:
                 proof_stream.push(bqc[i])
                 path = Merkle.open(i, bqc)
                 proof_stream.push(path)
 
-        # ... as well as in the randomizer
+        # ... cũng như trong randomizer
         for i in quadrupled_indices:
             proof_stream.push(randomizer_codeword[i])
             path = Merkle.open(i, randomizer_codeword)
             proof_stream.push(path)
 
-        # the final proof is just the serialized stream
+        # bằng chứng cuối cùng chỉ là luồng được tuần tự hóa
         return proof_stream.serialize()
 
     def verify( self, proof, transition_constraints, boundary, proof_stream=None ):
         H = blake2b
 
-        # infer trace length from boundary conditions
+        # suy ra độ dài trace từ các điều kiện biên
         original_trace_length = 1 + max(c for c, r, v in boundary)
         randomized_trace_length = original_trace_length + self.num_randomizers
 
-        # deserialize with right proof stream
+        # giải tuần tự hóa với proof stream đúng
         if proof_stream == None:
             proof_stream = ProofStream()
         proof_stream = proof_stream.deserialize(proof)
 
-        # get Merkle roots of boundary quotient codewords
+        # lấy các gốc Merkle của các codeword thương số biên
         boundary_quotient_roots = []
         for s in range(self.num_registers):
             boundary_quotient_roots = boundary_quotient_roots + [proof_stream.pull()]
 
-        # get Merkle root of randomizer polynomial
+        # lấy gốc Merkle của đa thức randomizer
         randomizer_root = proof_stream.pull()
 
-        # get weights for nonlinear combination
+        # lấy trọng số cho kết hợp phi tuyến
         weights = self.sample_weights(1 + 2*len(transition_constraints) + 2*len(self.boundary_interpolants(boundary)), proof_stream.verifier_fiat_shamir())
 
-        # verify low degree of combination polynomial
+        # xác minh bậc thấp của đa thức kết hợp
         polynomial_values = []
         verifier_accepts = self.fri.verify(proof_stream, polynomial_values)
         polynomial_values.sort(key=lambda iv : iv[0])
@@ -202,7 +202,7 @@ class Stark:
         indices = [i for i,v in polynomial_values]
         values = [v for i,v in polynomial_values]
 
-        # read and verify leafs, which are elements of boundary quotient codewords
+        # đọc và xác minh các lá, là các phần tử của codeword thương số biên
         duplicated_indices = [i for i in indices] + [(i + self.expansion_factor) % self.fri.domain_length for i in indices]
         duplicated_indices.sort()
         leafs = []
@@ -215,7 +215,7 @@ class Stark:
                 if not verifier_accepts:
                     return False
 
-        # read and verify randomizer leafs
+        # đọc và xác minh các lá randomizer
         randomizer = dict()
         for i in duplicated_indices:
             randomizer[i] = proof_stream.pull()
@@ -224,11 +224,11 @@ class Stark:
             if not verifier_accepts:
                 return False
 
-        # verify leafs of combination polynomial
+        # xác minh các lá của đa thức kết hợp
         for i in range(len(indices)):
-            current_index = indices[i] # do need i
+            current_index = indices[i] # cần i
 
-            # get trace values by applying a correction to the boundary quotient values (which are the leafs)
+            # lấy giá trị trace bằng cách áp dụng hiệu chỉnh cho các giá trị thương số biên (là các lá)
             domain_current_index = self.generator * (self.omega^current_index)
             next_index = (current_index + self.expansion_factor) % self.fri.domain_length
             domain_next_index = self.generator * (self.omega^next_index)
@@ -244,7 +244,7 @@ class Stark:
             point = [domain_current_index] + current_trace + next_trace
             transition_constraints_values = [transition_constraints[s].evaluate(point) for s in range(len(transition_constraints))]
 
-            # compute nonlinear combination
+            # tính toán kết hợp phi tuyến
             counter = 0
             terms = []
             terms += [randomizer[current_index]]
@@ -255,16 +255,15 @@ class Stark:
                 shift = self.max_degree(transition_constraints) - self.transition_quotient_degree_bounds(transition_constraints)[s]
                 terms += [quotient * (domain_current_index^shift)]
             for s in range(self.num_registers):
-                bqv = leafs[s][current_index] # boundary quotient value
+                bqv = leafs[s][current_index] # giá trị thương số biên
                 terms += [bqv]
                 shift = self.max_degree(transition_constraints) - self.boundary_quotient_degree_bounds(randomized_trace_length, boundary)[s]
                 terms += [bqv * (domain_current_index^shift)]
             combination = reduce(lambda a, b : a+b, [terms[j] * weights[j] for j in range(len(terms))], self.field.zero())
 
-            # verify against combination polynomial value
+            # xác minh với giá trị đa thức kết hợp
             verifier_accepts = verifier_accepts and (combination == values[i])
             if not verifier_accepts:
                 return False
 
         return verifier_accepts
-

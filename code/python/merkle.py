@@ -2,14 +2,14 @@ from hashlib import blake2b
 
 class Merkle:
     H = blake2b
-
+    # trả về root của từ nhiều hoặc một lá
     def commit_( leafs ):
         assert(len(leafs) & (len(leafs)-1) == 0), "length must be power of two"
         if len(leafs) == 1:
             return leafs[0]
         else:
             return Merkle.H(Merkle.commit_(leafs[:len(leafs)//2]) + Merkle.commit_(leafs[len(leafs)//2:])).digest()
-
+    # trả về root từ mảng dữ liệu
     def commit( data_array ):
         return Merkle.commit_([Merkle.H(bytes(da)).digest() for da in data_array])
     
@@ -25,7 +25,7 @@ class Merkle:
 
     def open( index, data_array ):
         return Merkle.open_(index, [Merkle.H(bytes(da)).digest() for da in data_array])
-    
+    # verify cho lá leaf
     def verify_( root, index, path, leaf ):
         assert(0 <= index and index < (1 << len(path))), "cannot verify invalid index"
         if len(path) == 1:
@@ -38,7 +38,7 @@ class Merkle:
                 return Merkle.verify_(root, index >> 1, path[1:], Merkle.H(leaf + path[0]).digest())
             else:
                 return Merkle.verify_(root, index >> 1, path[1:], Merkle.H(path[0] + leaf).digest())
-
+    # verry từ data phần tử 
     def verify( root, index, path, data_element ):
         return Merkle.verify_(root, index, path, Merkle.H(bytes(data_element)).digest())
 

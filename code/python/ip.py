@@ -24,7 +24,8 @@ class ProofStream:
     def verifier_fiat_shamir( self, num_bytes=32 ):
         return shake_256(pickle.dumps(self.objects[:self.read_index])).digest(num_bytes)
 
-    def deserialize( self, bb ):
+    @staticmethod
+    def deserialize(bb):
         ps = ProofStream()
         ps.objects = pickle.loads(bb)
         return ps

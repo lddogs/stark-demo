@@ -32,7 +32,7 @@ def test_fri( ):
     # test valid codeword
     print("testing valid codeword ...")
     proof_stream = ProofStream()
-
+    print(proof_stream.objects)
     fri.prove(codeword, proof_stream)
     print("")
     points = []
@@ -52,9 +52,10 @@ def test_fri( ):
     proof_stream = ProofStream()
     for i in range(0, degree//3):
         codeword[i] = field.zero()
-
+    print(proof_stream.objects)
     fri.prove(codeword, proof_stream)
     points = []
     assert False == fri.verify(proof_stream, points), "proof should fail, but is accepted ..."
     print("success! \\o/")
 
+test_fri()

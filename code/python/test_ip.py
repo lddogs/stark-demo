@@ -16,3 +16,5 @@ def test_serialize( ):
     assert(proof1.pull() == 2), "object 3 pulled from proof1 is not 2"
     assert(proof2.pull() == 2), "object 3 pulled from proof2 is not 2"
     assert(proof1.prover_fiat_shamir() == proof2.prover_fiat_shamir()), "fiat shamir is not the same"
+    
+test_serialize( )
